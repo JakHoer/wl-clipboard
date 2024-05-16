@@ -39,6 +39,7 @@
 
 static struct {
     char *explicit_type;
+    char *ignore_type;
     char *inferred_type;
     int no_newline;
     int list_types;
@@ -275,6 +276,17 @@ static void selection_callback(struct offer *offer, int primary) {
         exit(0);
     }
 
+    int ignore = 0;
+    if (options.ignore_type){
+        offer_for_each_mime_type(offer, mime_type) {
+        if(!ignore)
+          ignore = !strcmp(options.ignore_type, mime_type);
+        }
+    }
+
+    if(ignore){
+        puts("content is going to be ignored");
+    }
     struct types types = classify_offer_types(offer);
     const char *mime_type = mime_type_to_request(types);
 
@@ -319,7 +331,12 @@ static void selection_callback(struct offer *offer, int primary) {
     wl_display_flush(wl_display);
 
     close(pipefd[1]);
-    rc = run_paste_command(pipefd[0], "data");
+    if(!ignore){
+        rc = run_paste_command(pipefd[0], "data");
+    } else {
+        // run_paste_command returns 1 on success
+        rc = 1;
+    }
     if (!rc) {
         if (options.watch) {
             /* Try to cope without exiting completely */
@@ -340,6 +357,7 @@ static void selection_callback(struct offer *offer, int primary) {
 
     if (!options.watch) {
         free(options.explicit_type);
+        free(options.ignore_type);
         free(options.inferred_type);
         exit(0);
     }
@@ -359,6 +377,8 @@ static void print_usage(FILE *f, const char *argv0) {
         "Run a command each time the selection changes.\n"
         "\t-t, --type mime/type\t"
         "Override the inferred MIME type for the content.\n"
+        "\t-i, --ignore mime/type\t"
+        "Ignore entries with a specific MIME type. Useful with watch.\n"
         "\t-s, --seat seat-name\t"
         "Pick the seat to work with.\n"
         "\t-v, --version\t\tDisplay version info.\n"
@@ -383,12 +403,13 @@ static void parse_options(int argc, argv_t argv) {
         {"list-types", no_argument, 0, 'l'},
         {"watch", required_argument, 0, 'w'},
         {"type", required_argument, 0, 't'},
+        {"ignore", required_argument, 0, 'i'},
         {"seat", required_argument, 0, 's'},
         {0, 0, 0, 0}
     };
     while (1) {
         int option_index;
-        const char *opts = "vhpnlw:t:s:";
+        const char *opts = "vhpnlw:t:i:s:";
         int c = getopt_long(argc, argv, opts, long_options, &option_index);
         if (c == -1) {
             break;
@@ -449,6 +470,9 @@ static void parse_options(int argc, argv_t argv) {
             return;
         case 't':
             options.explicit_type = strdup(optarg);
+            break;
+        case 'i':
+            options.ignore_type = strdup(optarg);
             break;
         case 's':
             options.seat_name = strdup(optarg);
